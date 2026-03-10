@@ -31,7 +31,6 @@ const questionSchema = new mongoose.Schema(
       enum: ["easy", "medium", "hard"],
       default: "medium",
     },
-    tags: [{ type: String }],
     isAIGenerated: {
       type: Boolean,
       default: false,

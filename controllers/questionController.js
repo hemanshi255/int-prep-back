@@ -1,26 +1,93 @@
 const Question = require("../models/Question");
 const Topic = require("../models/Topic");
 
-// Get all questions — Admin only
-const getQuestions = async (req, res) => {
+exports.createData = async (req, res) => {
   try {
-    const { topicId, difficulty } = req.query;
-    let filter = {};
-    if (topicId) filter.topicId = topicId;
-    if (difficulty) filter.difficulty = difficulty;
+    const {
+      topicId,
+      question,
+      options,
+      correctOption,
+      explanation,
+      difficulty,
+    } = req.body;
 
-    const questions = await Question.find(filter)
-      .populate("topicId", "name icon")
-      .sort({ createdAt: -1 });
+    const data = await Question.create({
+      topicId,
+      question,
+      options,
+      correctOption,
+      explanation,
+      difficulty,
+      isAIGenerated: false,
+    });
 
-    res.json({ success: true, questions });
+    await Topic.findByIdAndUpdate(topicId, {
+      $inc: { totalQuestions: 1 },
+    });
+
+    res.status(201).json({
+      status: "Success",
+      message: "Question Created",
+      data: data,
+    });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    res.status(500).json({
+      status: "Fail",
+      message: error.message,
+    });
   }
 };
 
-// Get questions for practice — correct answer hidden
-const getQuestionsForPractice = async (req, res) => {
+exports.get = async (req, res) => {
+  try {
+    const { topicId, difficulty } = req.query;
+    let filter = { isActive: true };
+    if (topicId) filter.topicId = topicId;
+    if (difficulty) filter.difficulty = difficulty;
+
+    let data = await Question.find(filter)
+      .populate("topicId", "name icon")
+      .sort({ createdAt: -1 });
+
+    res.status(200).json({
+      status: "Success",
+      message: "Questions Get",
+      data: data,
+    });
+  } catch (error) {
+    res.status(500).json({
+      status: "Fail",
+      message: error.message,
+    });
+  }
+};
+
+exports.getSingle = async (req, res) => {
+  try {
+    const data = await Question.findById(req.params.id).populate(
+      "topicId",
+      "name",
+    );
+
+    if (!data) {
+      return res.status(404).json({ message: "Question not found" });
+    }
+
+    res.status(200).json({
+      status: "Success",
+      message: "Question Get",
+      data: data,
+    });
+  } catch (error) {
+    res.status(500).json({
+      status: "Fail",
+      message: error.message,
+    });
+  }
+};
+
+exports.getForPractice = async (req, res) => {
   try {
     const { difficulty } = req.query;
     let filter = { topicId: req.params.topicId, isActive: true };
@@ -28,93 +95,30 @@ const getQuestionsForPractice = async (req, res) => {
       filter.difficulty = difficulty;
     }
 
-    const questions = await Question.find(filter)
+    const data = await Question.find(filter)
       .select("-correctOption -explanation")
       .limit(10);
 
-    if (questions.length === 0) {
+    if (data.length === 0) {
       return res.status(404).json({
-        message: "No questions found for this topic and difficulty",
+        message: "No questions found for this topic",
       });
     }
 
-    res.json({ success: true, questions });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-};
-
-// Get single question — Admin only
-const getQuestion = async (req, res) => {
-  try {
-    const question = await Question.findById(req.params.id).populate(
-      "topicId",
-      "name",
-    );
-    if (!question) {
-      return res.status(404).json({ message: "Question not found" });
-    }
-    res.json({ success: true, question });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-};
-
-// Add question manually — Admin only
-const addQuestion = async (req, res) => {
-  try {
-    const question = await Question.create({
-      ...req.body,
-      isAIGenerated: false,
+    res.status(200).json({
+      status: "Success",
+      message: "Practice Questions Get",
+      data: data,
     });
-
-    await Topic.findByIdAndUpdate(req.body.topicId, {
-      $inc: { totalQuestions: 1 },
-    });
-
-    res.status(201).json({ success: true, question });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    res.status(500).json({
+      status: "Fail",
+      message: error.message,
+    });
   }
 };
 
-// Update question — Admin only
-const updateQuestion = async (req, res) => {
-  try {
-    const question = await Question.findByIdAndUpdate(req.params.id, req.body, {
-      new: true,
-    });
-    if (!question) {
-      return res.status(404).json({ message: "Question not found" });
-    }
-    res.json({ success: true, question });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-};
-
-// Deactivate question — Admin only
-const deleteQuestion = async (req, res) => {
-  try {
-    const question = await Question.findById(req.params.id);
-    if (!question) {
-      return res.status(404).json({ message: "Question not found" });
-    }
-
-    await Question.findByIdAndUpdate(req.params.id, { isActive: false });
-
-    await Topic.findByIdAndUpdate(question.topicId, {
-      $inc: { totalQuestions: -1 },
-    });
-
-    res.json({ success: true, message: "Question deactivated successfully" });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-};
-
-// Get random questions for mock interview
-const getRandomQuestions = async (req, res) => {
+exports.getRandomQuestions = async (req, res) => {
   try {
     const { targetRole } = req.query;
 
@@ -131,7 +135,7 @@ const getRandomQuestions = async (req, res) => {
 
     const topicIds = topics.map((t) => t._id);
 
-    const questions = await Question.aggregate([
+    const data = await Question.aggregate([
       {
         $match: {
           topicId: { $in: topicIds },
@@ -147,18 +151,65 @@ const getRandomQuestions = async (req, res) => {
       },
     ]);
 
-    res.json({ success: true, questions });
+    res.status(200).json({
+      status: "Success",
+      message: "Random Questions Get",
+      data: data,
+    });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    res.status(500).json({
+      status: "Fail",
+      message: error.message,
+    });
   }
 };
 
-module.exports = {
-  getQuestions,
-  getQuestionsForPractice,
-  getQuestion,
-  addQuestion,
-  updateQuestion,
-  deleteQuestion,
-  getRandomQuestions,
+exports.deleteData = async (req, res) => {
+  try {
+    let deleteId = req.params.id;
+
+    const question = await Question.findById(deleteId);
+    if (!question) {
+      return res.status(404).json({ message: "Question not found" });
+    }
+
+    await Question.findByIdAndUpdate(
+      deleteId,
+      { isActive: false },
+      { new: true },
+    );
+
+    await Topic.findByIdAndUpdate(question.topicId, {
+      $inc: { totalQuestions: -1 },
+    });
+
+    res.status(200).json({
+      status: "Success",
+      message: "Question deleted",
+    });
+  } catch (error) {
+    res.status(500).json({
+      status: "Fail",
+      message: error.message,
+    });
+  }
+};
+
+exports.editData = async (req, res) => {
+  try {
+    let editId = req.params.id;
+    let data = await Question.findByIdAndUpdate(editId, req.body, {
+      new: true,
+    });
+    res.status(200).json({
+      status: "Success",
+      message: "Question Updated",
+      data: data,
+    });
+  } catch (error) {
+    res.status(500).json({
+      status: "Fail",
+      message: error.message,
+    });
+  }
 };
